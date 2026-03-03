@@ -430,10 +430,31 @@ int main(int argc, char **argv) {
                 std::cout << "=========================================" << std::endl;
                 std::cout << std::endl;
 
-                // Generate synthetic historical data (2007-2024)
-                std::cout << "Generating synthetic historical data (2007-2024)..." << std::endl;
-                auto historicalData = Backtester::generateSyntheticHistory(17, 252);
-                std::cout << "Generated " << historicalData.size() << " trading days" << std::endl;
+                // Attempt to use real FRED data if API key is available
+                std::vector<HistoricalDataPoint> historicalData;
+                const char* fredKeyEnv = std::getenv("FRED_API_KEY");
+
+                if (fredKeyEnv && std::strlen(fredKeyEnv) > 0) {
+                    std::cout << "Fetching real historical data from FRED (2007-2024)..." << std::endl;
+                    try {
+                        historicalData = Backtester::fetchHistoricalData(
+                            fredKeyEnv, "2007-01-01", "2024-12-31");
+                        std::cout << "Loaded " << historicalData.size()
+                                  << " trading days from FRED" << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << "FRED fetch failed: " << e.what() << std::endl;
+                        std::cout << "Falling back to synthetic data..." << std::endl;
+                        historicalData.clear();
+                    }
+                }
+
+                if (historicalData.empty()) {
+                    std::cout << "Using synthetic historical data (2007-2024)..." << std::endl;
+                    std::cout << "  Set FRED_API_KEY env var for real data backtest" << std::endl;
+                    historicalData = Backtester::generateSyntheticHistory(17, 252);
+                }
+
+                std::cout << "Total trading days: " << historicalData.size() << std::endl;
                 std::cout << std::endl;
 
                 // Configure backtest
@@ -442,7 +463,8 @@ int main(int argc, char **argv) {
                 config.baseNotional = 5000000.0;     // $5M base position
                 config.commissionPerTrade = 2.50;
                 config.slippageBps = 1.0;
-                config.riskFreeRate = 0.04;
+                // Average risk-free rate over 2007-2024 period (~1.5% blended)
+                config.riskFreeRate = 0.015;
 
                 // Run backtest
                 std::cout << "Running backtest..." << std::endl;

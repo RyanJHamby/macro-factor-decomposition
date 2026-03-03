@@ -14,6 +14,8 @@
 #include <random>
 #include <iostream>
 #include <iomanip>
+#include <map>
+#include <nlohmann/json.hpp>
 
 BacktestResult Backtester::run(
     const BacktestConfig& config,
@@ -308,6 +310,223 @@ std::vector<HistoricalDataPoint> Backtester::generateSyntheticHistory(
 
         history.push_back(point);
     }
+
+    return history;
+}
+
+std::vector<HistoricalDataPoint> Backtester::fetchHistoricalData(
+    const std::string& fredApiKey,
+    const std::string& startDate,
+    const std::string& endDate)
+{
+    using json = nlohmann::json;
+
+    std::vector<HistoricalDataPoint> history;
+    FREDDataClient fred(fredApiKey);
+
+    // Helper lambda: fetch a FRED series as date→value map
+    auto fetchSeriesMap = [&](const std::string& seriesId,
+                              const std::string& label) -> std::map<std::string, double> {
+        std::cout << "  Fetching " << label << " (" << seriesId << ")..." << std::endl;
+        std::map<std::string, double> result;
+
+        try {
+            // Use fetchSeries with ascending sort and date range, large limit
+            std::string jsonResponse = fred.fetchSeries(
+                seriesId, 100000, "asc", startDate, endDate);
+
+            json j = json::parse(jsonResponse);
+            for (const auto& obs : j["observations"]) {
+                std::string valueStr = obs["value"].get<std::string>();
+                if (valueStr != ".") {
+                    std::string date = obs["date"].get<std::string>();
+                    result[date] = std::stod(valueStr);
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "  WARNING: Failed to fetch " << label << ": " << e.what() << std::endl;
+        }
+
+        return result;
+    };
+
+    // Fetch all required series
+    // SP500 only starts 2016 on FRED; use NASDAQCOM for earlier dates as equity proxy
+    auto sp500Map = fetchSeriesMap("SP500", "S&P 500");
+    auto nasdaqMap = fetchSeriesMap("NASDAQCOM", "NASDAQ Composite");
+
+    // Merge: use SP500 where available, NASDAQCOM otherwise
+    std::map<std::string, double> equityMap;
+    for (const auto& [date, val] : nasdaqMap) {
+        equityMap[date] = val;
+    }
+    for (const auto& [date, val] : sp500Map) {
+        equityMap[date] = val;  // SP500 overwrites NASDAQ for overlapping dates
+    }
+
+    auto dgs10Map = fetchSeriesMap("DGS10", "10-Year Treasury");
+    auto dgs2Map = fetchSeriesMap("DGS2", "2-Year Treasury");
+    auto vixMap = fetchSeriesMap("VIXCLS", "VIX");
+    auto unrateMap = fetchSeriesMap("UNRATE", "Unemployment Rate");
+    auto sentimentMap = fetchSeriesMap("UMCSENT", "Consumer Sentiment");
+
+    std::cout << "  Data fetched: Equity=" << equityMap.size()
+              << " (SP500=" << sp500Map.size() << " + NASDAQ=" << nasdaqMap.size() << ")"
+              << " DGS10=" << dgs10Map.size()
+              << " DGS2=" << dgs2Map.size()
+              << " VIX=" << vixMap.size()
+              << " UNRATE=" << unrateMap.size()
+              << " Sentiment=" << sentimentMap.size() << std::endl;
+
+    // Build sorted list of dates where we have equity data (our anchor series)
+    std::vector<std::string> tradingDates;
+    for (const auto& [date, _] : equityMap) {
+        tradingDates.push_back(date);
+    }
+    std::sort(tradingDates.begin(), tradingDates.end());
+
+    if (tradingDates.size() < 2) {
+        std::cerr << "  ERROR: Insufficient equity data points" << std::endl;
+        return history;
+    }
+
+    // Forward-fill monthly data (UNRATE, UMCSENT) to daily
+    double lastUnrate = 5.0;     // Default fallback
+    double lastSentiment = 80.0; // Default fallback
+
+    // Find first available values
+    if (!unrateMap.empty()) lastUnrate = unrateMap.begin()->second;
+    if (!sentimentMap.empty()) lastSentiment = sentimentMap.begin()->second;
+
+    std::map<std::string, double> unrateDailyMap, sentimentDailyMap;
+    for (const auto& date : tradingDates) {
+        auto uit = unrateMap.upper_bound(date);
+        if (uit != unrateMap.begin()) {
+            --uit;
+            lastUnrate = uit->second;
+        }
+        unrateDailyMap[date] = lastUnrate;
+
+        auto sit = sentimentMap.upper_bound(date);
+        if (sit != sentimentMap.begin()) {
+            --sit;
+            lastSentiment = sit->second;
+        }
+        sentimentDailyMap[date] = lastSentiment;
+    }
+
+    // Compute rolling statistics for z-score normalization (60-day window)
+    const int ROLLING_WINDOW = 60;
+    std::vector<double> recentVix;
+    std::vector<double> recentUnrateChange;
+    std::vector<double> recentSentiment;
+    double prevSp500 = 0.0;
+    double prevUnrate = lastUnrate;
+
+    for (size_t i = 0; i < tradingDates.size(); i++) {
+        const std::string& date = tradingDates[i];
+        double sp500Price = equityMap[date];
+
+        // Need previous day's price for return
+        if (i == 0) {
+            prevSp500 = sp500Price;
+            prevUnrate = unrateDailyMap[date];
+            continue;
+        }
+
+        // Compute daily S&P 500 return (ES proxy)
+        double esReturn = (sp500Price - prevSp500) / prevSp500;
+
+        // Get yield curve slope (2s10s in bps)
+        double dgs10 = 0.0, dgs2 = 0.0;
+        auto it10 = dgs10Map.find(date);
+        auto it2 = dgs2Map.find(date);
+        if (it10 != dgs10Map.end()) dgs10 = it10->second;
+        if (it2 != dgs2Map.end()) dgs2 = it2->second;
+        double yieldCurveSlope = (dgs10 - dgs2) * 100.0;  // Convert % to bps
+
+        // Get VIX
+        double vixLevel = 20.0;  // Default
+        auto vitx = vixMap.find(date);
+        if (vitx != vixMap.end()) {
+            vixLevel = vitx->second;
+        } else {
+            // Forward-fill VIX
+            auto vit = vixMap.upper_bound(date);
+            if (vit != vixMap.begin()) {
+                --vit;
+                vixLevel = vit->second;
+            }
+        }
+
+        // Get daily unemployment and sentiment
+        double unrate = unrateDailyMap[date];
+        double sentiment = sentimentDailyMap[date];
+        double unrateChange = unrate - prevUnrate;
+
+        // Maintain rolling windows for z-score
+        recentVix.push_back(vixLevel);
+        recentUnrateChange.push_back(unrateChange);
+        recentSentiment.push_back(sentiment);
+        if (recentVix.size() > ROLLING_WINDOW) {
+            recentVix.erase(recentVix.begin());
+            recentUnrateChange.erase(recentUnrateChange.begin());
+            recentSentiment.erase(recentSentiment.begin());
+        }
+
+        // Compute growth factor as z-score of sentiment + inverse unemployment change
+        double growthFactor = 0.0;
+        double volatilityFactor = 0.0;
+
+        if (recentSentiment.size() >= 20) {
+            // Sentiment z-score
+            double sentMean = std::accumulate(recentSentiment.begin(), recentSentiment.end(), 0.0) / recentSentiment.size();
+            double sentVar = 0.0;
+            for (double s : recentSentiment) sentVar += (s - sentMean) * (s - sentMean);
+            double sentStd = std::sqrt(sentVar / recentSentiment.size());
+            if (sentStd > 0.01) {
+                growthFactor = (sentiment - sentMean) / sentStd;
+            }
+
+            // VIX z-score → volatility factor
+            double vixMean = std::accumulate(recentVix.begin(), recentVix.end(), 0.0) / recentVix.size();
+            double vixVar = 0.0;
+            for (double v : recentVix) vixVar += (v - vixMean) * (v - vixMean);
+            double vixStd = std::sqrt(vixVar / recentVix.size());
+            if (vixStd > 0.01) {
+                volatilityFactor = (vixLevel - vixMean) / vixStd;
+            }
+        }
+
+        // Classify regime from real market data
+        // Estimate credit spread and MOVE from VIX (approximation for backtest)
+        double estimatedCreditSpread = 100.0 + (vixLevel - 15.0) * 5.0;  // Rough VIX→spread mapping
+        double estimatedMOVE = 80.0 + (vixLevel - 15.0) * 2.0;
+        double putCallRatio = 0.9 + (vixLevel - 20.0) * 0.01;  // Rough estimate
+
+        estimatedCreditSpread = std::max(50.0, std::min(500.0, estimatedCreditSpread));
+        estimatedMOVE = std::max(60.0, std::min(200.0, estimatedMOVE));
+        putCallRatio = std::max(0.5, std::min(1.8, putCallRatio));
+
+        MacroRegime regime = PositionSizer::classifyRegime(
+            vixLevel, estimatedMOVE, estimatedCreditSpread, yieldCurveSlope, putCallRatio
+        );
+
+        HistoricalDataPoint point;
+        point.date = date;
+        point.regime = regime;
+        point.esReturn = esReturn;
+        point.growthFactor = growthFactor;
+        point.volatilityFactor = volatilityFactor;
+        point.yieldCurveSlope = yieldCurveSlope;
+
+        history.push_back(point);
+
+        prevSp500 = sp500Price;
+        prevUnrate = unrate;
+    }
+
+    std::cout << "  Built " << history.size() << " trading days from real data" << std::endl;
 
     return history;
 }

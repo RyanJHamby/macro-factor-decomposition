@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.13)
 set(CMAKE_PREFIX_PATH "/Users/ryanhamby/Desktop/aws-sdk-cpp-install")
 
 # Set the AWS service components used by this project.
-set(SERVICE_COMPONENTS s3)
+set(SERVICE_COMPONENTS s3 dynamodb)
 
 set(CMAKE_CXX_COMPILER g++)
 set(CMAKE_C_COMPILER gcc)
@@ -27,8 +27,7 @@ file(GLOB DATA_PROCESSORS_SRC
 file(GLOB AWS_CLIENTS_SRC
      "*AwsClients/*.cpp"
 )
-# Remove DynamoDBClient since we don't build DynamoDB support in Lambda
-list(REMOVE_ITEM AWS_CLIENTS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/AwsClients/DynamoDBClient.cpp")
+# DynamoDB support enabled for tiered storage (hot/cold data partitioning)
 
 file(GLOB UTILS_SRC
      "*Utils/*.cpp"
@@ -64,7 +63,10 @@ set(TESTS_PARENT_DIR "${CMAKE_SOURCE_DIR}/..")
 file(GLOB TEST_SOURCES
     "${TESTS_PARENT_DIR}/test/*Test.cpp"
     )
-add_executable(test ${TEST_SOURCES})
+add_executable(test ${TEST_SOURCES}
+        ${DATA_PROCESSORS_SRC}
+        ${DATA_PROVIDERS_SRC}
+        ${UTILS_SRC})
 add_executable(${PROJECT_NAME}
         MultiVarAnalysisWorkflow.cpp
         ${DATA_PROCESSORS_SRC}
@@ -84,9 +86,12 @@ include_directories("/usr/local/include")
 target_link_libraries(${PROJECT_NAME}
         ${AWSSDK_LINK_LIBRARIES}
         ${AWSSDK_LIBRARIES}
-        curl)
+        curl
+        -static-libgcc
+        -static-libstdc++)
         
 target_link_libraries(test
         ${AWSSDK_LINK_LIBRARIES}
         ${AWSSDK_LIBRARIES}
-        ${GTEST_BOTH_LIBRARIES})
+        ${GTEST_BOTH_LIBRARIES}
+        curl)

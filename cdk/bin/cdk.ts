@@ -4,6 +4,7 @@ import { S3Stack } from '../lib/stacks/s3-stack';
 import { IamStack } from '../lib/stacks/iam-stack';
 import { LambdaStack } from '../lib/stacks/lambda-stack';
 import { EventBridgeStack } from '../lib/stacks/event-bridge-stack';
+import { DynamoDBStack } from '../lib/stacks/dynamodb-stack';
 
 const app = new cdk.App();
 
@@ -50,6 +51,15 @@ const lambdaStack = new LambdaStack(app, `${stackPrefix}LambdaStack`, {
   lambdaRole: iamStack.lambdaRole,
   fredApiKey,
   alphaVantageApiKey,
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: awsRegion,
+  },
+});
+
+// Create DynamoDB stack for tiered storage
+new DynamoDBStack(app, `${stackPrefix}DynamoDBStack`, {
+  environment,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: awsRegion,

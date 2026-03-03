@@ -15,6 +15,7 @@
 #include "PositionSizer.hpp"
 #include "PortfolioRiskAnalyzer.hpp"
 #include "MacroFactorModel.hpp"
+#include "../DataProviders/FREDDataClient.hpp"
 #include <vector>
 #include <string>
 
@@ -142,6 +143,26 @@ public:
     static std::vector<HistoricalDataPoint> generateSyntheticHistory(
         int numYears = 17,
         int tradingDaysPerYear = 252
+    );
+
+    /**
+     * Fetch real historical data from FRED API
+     *
+     * Fetches SP500 (returns proxy), DGS10/DGS2 (yield curve), VIXCLS (VIX),
+     * UNRATE (unemployment), UMCSENT (consumer sentiment) from 2007-2024.
+     *
+     * Constructs HistoricalDataPoint vector with real regime classifications
+     * derived from actual market data.
+     *
+     * @param fredApiKey: FRED API key
+     * @param startDate: Start date (YYYY-MM-DD), default "2007-01-01"
+     * @param endDate: End date (YYYY-MM-DD), default "2024-12-31"
+     * @return Vector of historical data points from real FRED data
+     */
+    static std::vector<HistoricalDataPoint> fetchHistoricalData(
+        const std::string& fredApiKey,
+        const std::string& startDate = "2007-01-01",
+        const std::string& endDate = "2024-12-31"
     );
 
     /**

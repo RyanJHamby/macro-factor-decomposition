@@ -325,3 +325,116 @@ double PositionSizer::computeDailyVaR(
 
     return var;
 }
+
+double PositionSizer::computeKellyFraction(
+    double winRate,
+    double avgWin,
+    double avgLoss)
+{
+    if (winRate <= 0.0 || winRate >= 1.0) {
+        return 0.0;  // Invalid win rate
+    }
+    if (avgWin <= 0.0 || avgLoss <= 0.0) {
+        return 0.0;  // Need positive win/loss magnitudes
+    }
+
+    // Kelly formula: f* = (p * R - q) / R
+    // where p = win prob, q = 1-p, R = avgWin/avgLoss
+    double p = winRate;
+    double q = 1.0 - winRate;
+    double R = avgWin / avgLoss;
+
+    double fullKelly = (p * R - q) / R;
+
+    // If negative edge, don't trade
+    if (fullKelly <= 0.0) {
+        return 0.0;
+    }
+
+    // Half-Kelly for practical use (reduces variance significantly)
+    double halfKelly = fullKelly / 2.0;
+
+    // Cap at 25% of capital
+    return std::min(halfKelly, 0.25);
+}
+
+void PositionSizer::estimateWinRate(
+    const std::vector<double>& tradeReturns,
+    double& outWinRate,
+    double& outAvgWin,
+    double& outAvgLoss)
+{
+    if (tradeReturns.empty()) {
+        outWinRate = 0.0;
+        outAvgWin = 0.0;
+        outAvgLoss = 0.0;
+        return;
+    }
+
+    int wins = 0;
+    double totalWin = 0.0;
+    double totalLoss = 0.0;
+    int losses = 0;
+
+    for (double ret : tradeReturns) {
+        if (ret > 0.0) {
+            wins++;
+            totalWin += ret;
+        } else if (ret < 0.0) {
+            losses++;
+            totalLoss += std::abs(ret);
+        }
+    }
+
+    outWinRate = (wins + losses > 0) ? static_cast<double>(wins) / (wins + losses) : 0.0;
+    outAvgWin = (wins > 0) ? totalWin / wins : 0.0;
+    outAvgLoss = (losses > 0) ? totalLoss / losses : 0.0;
+}
+
+PositionSizing PositionSizer::computeKellyPositionSize(
+    double baseNotional,
+    const RiskDecomposition& riskDecomp,
+    const MacroRegime& regime,
+    const PositionConstraint& constraints,
+    const std::vector<double>& tradeHistory)
+{
+    // If no trade history, fall back to standard vol-scaling
+    if (tradeHistory.size() < 30) {
+        return computePositionSize(baseNotional, riskDecomp, regime, constraints);
+    }
+
+    // Estimate Kelly parameters from trade history
+    double winRate, avgWin, avgLoss;
+    estimateWinRate(tradeHistory, winRate, avgWin, avgLoss);
+
+    double kellyFraction = computeKellyFraction(winRate, avgWin, avgLoss);
+
+    if (kellyFraction <= 0.0) {
+        // No edge detected, use minimal position
+        PositionSizing sizing = computePositionSize(
+            baseNotional * 0.1, riskDecomp, regime, constraints);
+        sizing.rationale = "Kelly: no edge detected, minimal position";
+        return sizing;
+    }
+
+    // Kelly-adjusted notional
+    double kellyNotional = baseNotional * kellyFraction;
+
+    // Still apply regime adjustment on top of Kelly
+    double volMultiplier = computeVolatilityMultiplier(regime);
+    kellyNotional /= volMultiplier;
+
+    // Use standard position sizing with Kelly-adjusted base
+    PositionSizing sizing = computePositionSize(
+        kellyNotional, riskDecomp, regime, constraints);
+
+    std::ostringstream rationale;
+    rationale << "Kelly: f*=" << (kellyFraction * 2.0)
+              << ", half-Kelly=" << kellyFraction
+              << ", winRate=" << winRate
+              << ", avgWin/avgLoss=" << (avgLoss > 0 ? avgWin / avgLoss : 0.0)
+              << ", regimeAdj=" << volMultiplier;
+    sizing.rationale = rationale.str();
+
+    return sizing;
+}

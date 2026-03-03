@@ -259,6 +259,61 @@ public:
         double confidenceLevel = 0.95
     );
 
+    /**
+     * Compute Kelly criterion optimal fraction
+     *
+     * f* = (p * R - q) / R
+     * where p = win probability, q = 1-p, R = avgWin/avgLoss
+     *
+     * Returns half-Kelly (f*/2) for practical use to reduce variance.
+     *
+     * @param winRate: Historical win probability (0-1)
+     * @param avgWin: Average winning trade return
+     * @param avgLoss: Average losing trade return (positive number)
+     * @return Optimal fraction of capital to risk (half-Kelly)
+     */
+    static double computeKellyFraction(
+        double winRate,
+        double avgWin,
+        double avgLoss
+    );
+
+    /**
+     * Estimate win rate and average win/loss from backtest trade history
+     *
+     * @param tradeReturns: Vector of individual trade P&L values
+     * @param outWinRate: Estimated win probability
+     * @param outAvgWin: Average winning trade
+     * @param outAvgLoss: Average losing trade (positive number)
+     */
+    static void estimateWinRate(
+        const std::vector<double>& tradeReturns,
+        double& outWinRate,
+        double& outAvgWin,
+        double& outAvgLoss
+    );
+
+    /**
+     * Compute Kelly-adjusted position size
+     *
+     * Uses Kelly fraction when backtest data available,
+     * falls back to vol-scaling otherwise.
+     *
+     * @param baseNotional: Maximum desired position
+     * @param riskDecomp: Risk decomposition
+     * @param regime: Current market regime
+     * @param constraints: Hard limits
+     * @param tradeHistory: Historical trade returns (empty = use vol-scaling)
+     * @return Recommended position with Kelly adjustment
+     */
+    static PositionSizing computeKellyPositionSize(
+        double baseNotional,
+        const RiskDecomposition& riskDecomp,
+        const MacroRegime& regime,
+        const PositionConstraint& constraints,
+        const std::vector<double>& tradeHistory
+    );
+
 private:
     /**
      * Risk adjustment weights for regime classification

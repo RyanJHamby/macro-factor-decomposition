@@ -1,6 +1,6 @@
 # Macro Factor Decomposition & Automated Trading System
 
-Macro-factor-driven ES futures trading system with PCA-based regime classification, Kelly criterion position sizing, and automated order execution. Decomposes 8-indicator covariance matrices into interpretable factors (Growth, Inflation, Policy, Volatility) for regime-aware signal generation, backtested on real FRED data over 18 years (2007-2024) with 87% win rate at 3.2% max drawdown.
+Macro-factor-driven ES futures trading system with PCA-based regime classification, Kelly criterion position sizing, and automated order execution. Decomposes 8-indicator covariance matrices into interpretable factors (Growth, Inflation, Policy, Volatility) for regime-aware signal generation, backtested on real FRED data (2007-2024). Backtest results are withdrawn pending a rerun; see [Backtest Results](#backtest-results-2007-2024).
 
 ## Core Hypothesis
 
@@ -68,19 +68,10 @@ FRED API + Alpha Vantage
 
 Backtested on real FRED historical data: S&P 500/NASDAQ daily prices, Treasury yields, VIX (VIXCLS), unemployment, consumer sentiment.
 
-| Metric | Value |
-|--------|-------|
-| Sharpe Ratio | 0.28 |
-| Annualized Return | 2.10% |
-| Max Drawdown | 3.23% |
-| Win Rate | 87.2% |
-| Calmar Ratio | 0.65 |
-| Profit Factor | 8.42 |
-| VaR Breach Rate | 1.6% (conservative) |
-| Number of Trades | 468 |
-| Trading Days | 4,530 |
-
-Conservative position sizing (half-Kelly with regime vol-adjustment) keeps drawdowns minimal. The strategy trades macro regime signals — not a high-frequency system. Returns reflect the genuine alpha from regime classification on daily equity returns.
+> **Results withdrawn (Nov 2026).** The original backtest generated signals from same-day data (look-ahead) and did not
+> run through the PCA model, so its Sharpe, drawdown, win-rate and return figures are not valid evidence and are no
+> longer quoted. They will be replaced by a rerun with lagged signals through the PCA model, captured with the
+> command, raw output and hardware in `results/`.
 
 Data sources: FRED API (SP500, NASDAQCOM, DGS10, DGS2, VIXCLS, UNRATE, UMCSENT). NASDAQCOM used for 2007-2016 equity returns where FRED SP500 data is unavailable.
 

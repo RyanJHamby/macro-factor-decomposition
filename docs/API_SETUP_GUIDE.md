@@ -260,7 +260,7 @@ python test_apis.py
 ### Environment Variables to Add
 1. **FRED_API_KEY:** Your FRED API key
 2. **POLYGON_API_KEY:** Your Polygon.io API key
-3. **ALPHA_VANTAGE_API_KEY:** `D3G5VY7GCOEB887N` (existing, keep as backup)
+3. **ALPHA_VANTAGE_API_KEY:** `YOUR_ALPHA_VANTAGE_API_KEY` (existing, keep as backup)
 
 ### AWS Console Steps
 1. Go to Lambda console

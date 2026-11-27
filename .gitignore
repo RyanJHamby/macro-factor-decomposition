@@ -65,3 +65,10 @@ lib/
 # Python
 *.pyc
 __pycache__/
+
+# Vendored/built artifacts (build them locally; see README "Building & Running")
+aws-sdk-cpp-install/
+aws-sdk-cpp/
+/opt/
+src/build-xcode/
+lambda-function.zip

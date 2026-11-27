@@ -184,6 +184,11 @@ export FRED_API_KEY=xxx ALPHA_VANTAGE_API_KEY=yyy
 ./test
 ```
 
+The AWS SDK for C++ is not vendored in this repo. `src/CMakeLists.txt` points `CMAKE_PREFIX_PATH` at a local
+install of the SDK (currently an absolute path on the author's machine); change it to wherever you installed the
+SDK. The exact SDK version and install steps are not recorded here. `lambda-function.zip` is a build output: make it
+with the steps under "Deploying to AWS".
+
 ## Deploying to AWS
 
 ```bash

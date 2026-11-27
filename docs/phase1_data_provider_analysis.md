@@ -230,7 +230,7 @@ Data Flow:
 - Documentation: https://polygon.io/docs/stocks/getting-started
 
 **Alpha Vantage (backup):**
-- Current key: `D3G5VY7GCOEB887N` (hardcoded in Lambda)
+- Key: `YOUR_ALPHA_VANTAGE_API_KEY` (read by the Lambda from the `ALPHA_VANTAGE_API_KEY` env var)
 - Keep for backward compatibility
 
 ---

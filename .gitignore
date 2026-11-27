@@ -59,3 +59,9 @@ lib/
 *.swp
 *.swo
 *~
+.env.*
+!.env.example
+
+# Python
+*.pyc
+__pycache__/

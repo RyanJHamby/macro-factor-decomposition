@@ -1,3 +1,4 @@
+import os
 import requests
 import boto3
 import json
@@ -38,7 +39,7 @@ class AlphaVantageDataRetriever:
             return False
         
 def fetch(event, context):
-    api_key = "D3G5VY7GCOEB887N"
+    api_key = os.environ["ALPHA_VANTAGE_API_KEY"]
     bucket_name = "alpha-insights"
     data_retriever = AlphaVantageDataRetriever(api_key)
     
